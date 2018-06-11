@@ -2,6 +2,8 @@
 {
   using Sitecore.Configuration;
   using Sitecore.Data;
+  using Sitecore.Data.Events;
+  using Sitecore.Data.Fields;
   using Sitecore.Data.Items;
   using Sitecore.XA.Foundation.Multisite;
   using Sitecore.XA.Foundation.Multisite.Comparers;
@@ -18,6 +20,9 @@
     public List<Item> ResolveAllSites(Database database)
     {
       List<Item> obj = database?.GetContentItemsOfTemplate(Templates.SiteDefinition.ID).ToList() ?? new List<Item>();
+      #region Added code
+      AddMissingSites(obj, database);
+      #endregion
       obj.Sort(new TreeOrderComparer());
       return obj;
     }
@@ -59,5 +64,43 @@
                 return false;
               }).ToList();
     }
+    #region Added code
+    public void AddMissingSites(List<Item> sites, Database database)
+    {
+      Item item = database.GetItem(new ID("{F78EC6BE-D9BA-4595-B740-E801ACDB0459}"));
+      if (item == null)
+      {
+        return;
+      }
+      MultilistField multilistField = item.Fields[Templates.SiteManagement.Fields.Order];
+      if (multilistField != null)
+      {
+        foreach (var site in sites)
+        {
+          if (site.TemplateID == new ID("{EDA823FC-BC7E-4EF6-B498-CD09EC6FDAEF}"))
+          {
+            if (!multilistField.TargetIDs.Contains(site.ID))
+            {
+              using (new EventDisabler())
+              {
+                using (new EditContext(item))
+                {
+                  multilistField.Add(site.ID.ToString());
+                }
+              }
+              string[] cacheKeys = Sitecore.Caching.CacheManager.GetItemCache(database).InnerCache.GetCacheKeys();
+              foreach (var cacheKey in cacheKeys)
+              {
+                if (cacheKey.StartsWith(item.ID.ToString()))
+                {
+                  Sitecore.Caching.CacheManager.GetItemCache(database).Remove(cacheKey);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    #endregion
   }
 }
